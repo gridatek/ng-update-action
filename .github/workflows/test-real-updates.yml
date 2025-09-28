@@ -32,8 +32,8 @@ jobs:
       fail-fast: false
       matrix:
         package-manager: ${{ fromJson(github.event.inputs.package-manager && format('["{0}"]', github.event.inputs.package-manager) || '["npm", "yarn", "pnpm"]') }}
-        node-version: [18, 20, 22]
-        base-angular-version: [16, 17] # Test upgrading from older versions
+        node-version: [22, 24]
+        base-angular-version: [19] # Test upgrading from older versions
 
     steps:
       - name: Checkout
