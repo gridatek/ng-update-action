@@ -9,24 +9,28 @@ Create a GitHub Action that automatically updates Angular CLI workspaces to the 
 ## Core Functionality
 
 ### Command Mapping
+
 - Replace `nx migrate latest` → `ng update @angular/core @angular/cli`
 - Replace `nx run-many --target=build` → `ng build` (for all projects) or specific project builds
 - Replace `nx run-many --target=test` → `ng test` (for all projects) or specific project tests
 - No migrations.json handling needed (Angular CLI handles migrations internally)
 
 ### Version Detection
+
 - Target package: `@angular/core` (default)
 - Support version tags: `latest`, `next`, `rc`
 - Support specific versions: `17.3.0`, `18.0.0`, etc.
 - Use same package manager detection logic as nx-migrate-action
 
 ### Branch Naming
+
 - Production mode: `ng-update-17.3.0`
 - Dev mode: `ng-update-17.3.0-npm-node22-{run-id}-{job-id}`
 
 ## Required Files
 
 ### 1. action.yml
+
 Composite action with these inputs:
 
 ```yaml
@@ -127,6 +131,7 @@ outputs:
 ### 3. Angular-Specific Logic
 
 #### Version Detection
+
 ```bash
 # For npm
 npm view @angular/core@latest version
@@ -139,6 +144,7 @@ pnpm view @angular/core@latest version
 ```
 
 #### Update Commands
+
 ```bash
 # Basic update
 ng update @angular/core @angular/cli
@@ -151,6 +157,7 @@ ng update @angular/core @angular/cli @angular/material
 ```
 
 #### Validation Commands
+
 ```bash
 # Build validation
 ng build --configuration production
@@ -168,6 +175,7 @@ ng e2e
 ### 4. README.md Structure
 
 #### Sections to include:
+
 - **Features** - Angular CLI update automation, validation, smart PR creation
 - **Quick Start** - Basic usage examples
 - **Configuration Options** - All inputs with descriptions
@@ -176,6 +184,7 @@ ng e2e
 - **Troubleshooting** - Common Angular CLI issues
 
 #### Example Usage:
+
 ```yaml
 - uses: gridatek/ng-update-action@v0
   env:
@@ -189,11 +198,13 @@ ng e2e
 ### 5. Test Workflows
 
 Create matrix testing for:
+
 - Package managers: npm, yarn, pnpm
 - Node.js versions: 18, 20, 22
 - Angular versions: Test upgrading from older versions
 
 Test setup should:
+
 1. Create temporary Angular workspace with older version
 2. Install dependencies
 3. Run the action
@@ -225,6 +236,7 @@ Test setup should:
 ## Branch Protection & PR Handling
 
 Follow same patterns as nx-migrate-action:
+
 - Respect branch protection rules
 - Create detailed PRs with update summary
 - Handle validation failures gracefully

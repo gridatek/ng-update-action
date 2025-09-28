@@ -5,7 +5,11 @@
   "main": "action.yml",
   "scripts": {
     "lint": "node -e \"const fs=require('fs');const yaml=require('js-yaml');const files=['action.yml','.github/workflows/ci.yml','.github/workflows/test-real-updates.yml','.yamllint.yml'];files.forEach(f=>{try{yaml.load(fs.readFileSync(f,'utf8'));console.log('✓',f)}catch(e){console.error('✗',f,e.message);process.exit(1)}})\"",
-    "test": "echo \"Tests are implemented as GitHub Actions workflows\" && exit 0"
+    "test": "echo \"Tests are implemented as GitHub Actions workflows\" && exit 0",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "**/*": "prettier --write --ignore-unknown"
   },
   "repository": {
     "type": "git",
@@ -26,6 +30,9 @@
   },
   "homepage": "https://github.com/gridatek/ng-update-action#readme",
   "devDependencies": {
-    "js-yaml": "^4.1.0"
+    "husky": "^9.1.7",
+    "js-yaml": "^4.1.0",
+    "lint-staged": "^16.2.2",
+    "prettier": "3.6.2"
   }
 }

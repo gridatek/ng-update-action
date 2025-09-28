@@ -52,31 +52,31 @@ jobs:
 
 ### Inputs
 
-| Input | Description | Default | Required |
-|-------|-------------|---------|----------|
-| `angular-package` | The Angular package to check for updates | `@angular/core` | No |
-| `angular-version` | Angular version to use (latest, next, rc, or specific version) | `latest` | No |
-| `additional-packages` | Additional Angular packages to update (comma-separated) | `@angular/cli` | No |
-| `package-manager` | Package manager to use (npm, yarn, pnpm) | `npm` | No |
-| `validation-commands` | Commands to run for validation (comma-separated) | `build` | No |
-| `affected` | Only validate affected projects (true) or all projects (false) | `true` | No |
-| `merge-strategy` | Merge strategy after validation (auto-merge, always-pr) | `auto-merge` | No |
-| `pr-labels` | Labels to add to PRs (comma-separated) | `ng-update-action` | No |
-| `commit-message-prefix` | Prefix for commit messages | `build` | No |
-| `target-branch` | Target branch for merging changes | `main` | No |
-| `working-directory` | Working directory | `.` | No |
-| `skip-initial-install` | Skip initial dependency installation | `false` | No |
-| `dev-mode` | Enable dev mode for testing | `false` | No |
+| Input                   | Description                                                    | Default            | Required |
+| ----------------------- | -------------------------------------------------------------- | ------------------ | -------- |
+| `angular-package`       | The Angular package to check for updates                       | `@angular/core`    | No       |
+| `angular-version`       | Angular version to use (latest, next, rc, or specific version) | `latest`           | No       |
+| `additional-packages`   | Additional Angular packages to update (comma-separated)        | `@angular/cli`     | No       |
+| `package-manager`       | Package manager to use (npm, yarn, pnpm)                       | `npm`              | No       |
+| `validation-commands`   | Commands to run for validation (comma-separated)               | `build`            | No       |
+| `affected`              | Only validate affected projects (true) or all projects (false) | `true`             | No       |
+| `merge-strategy`        | Merge strategy after validation (auto-merge, always-pr)        | `auto-merge`       | No       |
+| `pr-labels`             | Labels to add to PRs (comma-separated)                         | `ng-update-action` | No       |
+| `commit-message-prefix` | Prefix for commit messages                                     | `build`            | No       |
+| `target-branch`         | Target branch for merging changes                              | `main`             | No       |
+| `working-directory`     | Working directory                                              | `.`                | No       |
+| `skip-initial-install`  | Skip initial dependency installation                           | `false`            | No       |
+| `dev-mode`              | Enable dev mode for testing                                    | `false`            | No       |
 
 ### Outputs
 
-| Output | Description |
-|--------|-------------|
-| `updated` | Whether Angular was updated |
-| `current-version` | Current Angular version before update |
-| `latest-version` | Latest Angular version |
-| `validation-result` | Result of validation tests |
-| `pr-url` | URL of created PR (if any) |
+| Output              | Description                           |
+| ------------------- | ------------------------------------- |
+| `updated`           | Whether Angular was updated           |
+| `current-version`   | Current Angular version before update |
+| `latest-version`    | Latest Angular version                |
+| `validation-result` | Result of validation tests            |
+| `pr-url`            | URL of created PR (if any)            |
 
 ## Usage Examples
 
@@ -234,12 +234,12 @@ You can also explicitly specify the package manager using the `package-manager` 
 
 Different Angular versions require specific Node.js versions:
 
-| Angular Version | Node.js Version |
-|----------------|-----------------|
-| 15.x | 16.x, 18.x |
-| 16.x | 16.x, 18.x |
-| 17.x | 18.x, 20.x |
-| 18.x | 18.x, 20.x, 22.x |
+| Angular Version | Node.js Version  |
+| --------------- | ---------------- |
+| 15.x            | 16.x, 18.x       |
+| 16.x            | 16.x, 18.x       |
+| 17.x            | 18.x, 20.x       |
+| 18.x            | 18.x, 20.x, 22.x |
 
 Make sure your workflow uses a compatible Node.js version.
 
