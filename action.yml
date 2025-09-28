@@ -229,6 +229,26 @@ runs:
 
         git checkout -b "$BRANCH_NAME"
 
+    - name: Ensure Angular CLI is Available
+      if: steps.version-check.outputs.needs-update == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        # Check if ng command is available, install if not
+        if ! command -v ng &> /dev/null; then
+          echo "Angular CLI not found globally, checking local installation..."
+
+          # Check if @angular/cli is in package.json
+          if grep -q '"@angular/cli"' package.json; then
+            echo "Angular CLI found in package.json, using npx"
+          else
+            echo "Installing Angular CLI globally..."
+            npm install -g @angular/cli
+          fi
+        else
+          echo "Angular CLI is available: $(ng version --version 2>/dev/null || ng --version)"
+        fi
+
     - name: Run Angular Update
       if: steps.version-check.outputs.needs-update == 'true'
       id: update-check
@@ -257,12 +277,21 @@ runs:
 
         echo "Updating packages: $UPDATE_PACKAGES"
 
+        # Determine ng command (global or npx)
+        if command -v ng &> /dev/null; then
+          NG_COMMAND="ng"
+        else
+          NG_COMMAND="npx ng"
+        fi
+
+        echo "Using ng command: $NG_COMMAND"
+
         # Run ng update with force flag to handle prompts
-        npx ng update $UPDATE_PACKAGES --force --allow-dirty || {
+        $NG_COMMAND update $UPDATE_PACKAGES --force --allow-dirty || {
           echo "ng update failed, trying with individual packages..."
           for package in $UPDATE_PACKAGES; do
             echo "Updating $package individually..."
-            npx ng update "$package" --force --allow-dirty || echo "Failed to update $package"
+            $NG_COMMAND update "$package" --force --allow-dirty || echo "Failed to update $package"
           done
         }
 
@@ -320,6 +349,15 @@ runs:
 
         echo "Running validation commands: $VALIDATION_COMMANDS"
 
+        # Determine ng command (global or npx)
+        if command -v ng &> /dev/null; then
+          NG_COMMAND="ng"
+        else
+          NG_COMMAND="npx ng"
+        fi
+
+        echo "Using ng command for validation: $NG_COMMAND"
+
         VALIDATION_FAILED=false
 
         IFS=',' read -ra COMMANDS <<< "$VALIDATION_COMMANDS"
@@ -330,19 +368,19 @@ runs:
           case "$cmd" in
             "build")
               if [[ "$AFFECTED" == "true" ]]; then
-                npx ng build --configuration production || VALIDATION_FAILED=true
+                $NG_COMMAND build --configuration production || VALIDATION_FAILED=true
               else
-                npx ng build --configuration production || VALIDATION_FAILED=true
+                $NG_COMMAND build --configuration production || VALIDATION_FAILED=true
               fi
               ;;
             "test")
-              npx ng test --watch=false --browsers=ChromeHeadless --code-coverage || VALIDATION_FAILED=true
+              $NG_COMMAND test --watch=false --browsers=ChromeHeadless --code-coverage || VALIDATION_FAILED=true
               ;;
             "lint")
-              npx ng lint || VALIDATION_FAILED=true
+              $NG_COMMAND lint || VALIDATION_FAILED=true
               ;;
             "e2e")
-              npx ng e2e || VALIDATION_FAILED=true
+              $NG_COMMAND e2e || VALIDATION_FAILED=true
               ;;
             *)
               echo "Running custom command: $cmd"
@@ -422,9 +460,17 @@ runs:
 
             # Create PR using GitHub CLI
             if command -v gh &> /dev/null; then
-              PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS")
-              echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
-              echo "Created PR: $PR_URL"
+              # Try to create PR with labels, fall back without labels if they don't exist
+              if PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS" 2>/dev/null); then
+                echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+                echo "Created PR with labels: $PR_URL"
+              elif PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" 2>/dev/null); then
+                echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+                echo "Created PR without labels (labels not found): $PR_URL"
+              else
+                echo "Failed to create PR"
+                echo "pr-url=failed" >> $GITHUB_OUTPUT
+              fi
             else
               echo "GitHub CLI not available, cannot create PR"
               echo "pr-url=unavailable" >> $GITHUB_OUTPUT
@@ -435,9 +481,17 @@ runs:
 
           # Create PR using GitHub CLI
           if command -v gh &> /dev/null; then
-            PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS")
-            echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
-            echo "Created PR: $PR_URL"
+            # Try to create PR with labels, fall back without labels if they don't exist
+            if PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS" 2>/dev/null); then
+              echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+              echo "Created PR with labels: $PR_URL"
+            elif PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" 2>/dev/null); then
+              echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+              echo "Created PR without labels (labels not found): $PR_URL"
+            else
+              echo "Failed to create PR"
+              echo "pr-url=failed" >> $GITHUB_OUTPUT
+            fi
           else
             echo "GitHub CLI not available, cannot create PR"
             echo "pr-url=unavailable" >> $GITHUB_OUTPUT
