@@ -1,0 +1,184 @@
+name: Test Real Updates
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Run every Monday at 6 AM
+  workflow_dispatch:
+    inputs:
+      angular-version:
+        description: 'Angular version to test'
+        required: false
+        default: 'latest'
+        type: choice
+        options:
+          - 'latest'
+          - 'next'
+          - 'rc'
+      package-manager:
+        description: 'Package manager to test'
+        required: false
+        default: 'npm'
+        type: choice
+        options:
+          - 'npm'
+          - 'yarn'
+          - 'pnpm'
+
+jobs:
+  test-real-update:
+    name: Test Real Angular Update
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package-manager: ${{ fromJson(github.event.inputs.package-manager && format('["{0}"]', github.event.inputs.package-manager) || '["npm", "yarn", "pnpm"]') }}
+        node-version: [18, 20, 22]
+        base-angular-version: [16, 17] # Test upgrading from older versions
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup package manager
+        run: |
+          if [[ "${{ matrix.package-manager }}" == "yarn" ]]; then
+            npm install -g yarn
+          elif [[ "${{ matrix.package-manager }}" == "pnpm" ]]; then
+            npm install -g pnpm
+          fi
+
+      - name: Create test Angular workspace with older version
+        run: |
+          # Install specific older Angular CLI version
+          npm install -g @angular/cli@${{ matrix.base-angular-version }}
+
+          # Create new Angular workspace
+          ng new test-workspace-real --routing=true --style=css --skip-git=true --package-manager=${{ matrix.package-manager }}
+
+          # Initialize git for the test workspace
+          cd test-workspace-real
+          git init
+          git config user.name "Test User"
+          git config user.email "test@example.com"
+          git add .
+          git commit -m "Initial Angular ${{ matrix.base-angular-version }} workspace"
+
+      - name: Test the action with real update
+        id: real-update
+        uses: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          working-directory: './test-workspace-real'
+          package-manager: ${{ matrix.package-manager }}
+          angular-version: ${{ github.event.inputs.angular-version || 'latest' }}
+          validation-commands: 'build,test'
+          additional-packages: '@angular/cli,@angular/animations'
+          merge-strategy: 'always-pr'
+          dev-mode: 'true'
+          pr-labels: 'test,ng-update-action'
+
+      - name: Verify update results
+        working-directory: ./test-workspace-real
+        run: |
+          echo "=== Update Results ==="
+          echo "Updated: ${{ steps.real-update.outputs.updated }}"
+          echo "Current Version: ${{ steps.real-update.outputs.current-version }}"
+          echo "Latest Version: ${{ steps.real-update.outputs.latest-version }}"
+          echo "Validation Result: ${{ steps.real-update.outputs.validation-result }}"
+          echo "PR URL: ${{ steps.real-update.outputs.pr-url }}"
+
+          echo "=== Git Status ==="
+          git status
+
+          echo "=== Package.json Changes ==="
+          git log --oneline -n 5
+
+          if [[ "${{ steps.real-update.outputs.updated }}" == "true" ]]; then
+            echo "✅ Angular was successfully updated"
+
+            # Verify the update actually changed package.json
+            if git diff HEAD~1 package.json | grep -q "@angular"; then
+              echo "✅ Angular packages were updated in package.json"
+            else
+              echo "❌ No Angular package changes found in package.json"
+              exit 1
+            fi
+          else
+            echo "ℹ️  No update was needed (already at target version)"
+          fi
+
+      - name: Test workspace still functions
+        working-directory: ./test-workspace-real
+        run: |
+          # Install dependencies and test that workspace still works
+          case "${{ matrix.package-manager }}" in
+            "yarn")
+              yarn install
+              yarn build
+              ;;
+            "pnpm")
+              pnpm install
+              pnpm run build
+              ;;
+            *)
+              npm install
+              npm run build
+              ;;
+          esac
+
+          echo "✅ Workspace builds successfully after update"
+
+  test-specific-versions:
+    name: Test Specific Version Updates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create Angular 16 workspace
+        run: |
+          npm install -g @angular/cli@16
+          ng new test-workspace-v16 --routing=true --style=css --skip-git=true --package-manager=npm
+
+          cd test-workspace-v16
+          git init
+          git config user.name "Test User"
+          git config user.email "test@example.com"
+          git add .
+          git commit -m "Initial Angular 16 workspace"
+
+      - name: Update to Angular 17
+        uses: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          working-directory: './test-workspace-v16'
+          package-manager: 'npm'
+          angular-version: '17'
+          validation-commands: 'build'
+          merge-strategy: 'always-pr'
+          dev-mode: 'true'
+
+      - name: Verify Angular 17 update
+        working-directory: ./test-workspace-v16
+        run: |
+          # Check if package.json contains Angular 17
+          if grep -q '"@angular/core": "^17\.' package.json; then
+            echo "✅ Successfully updated to Angular 17"
+          else
+            echo "❌ Failed to update to Angular 17"
+            cat package.json | grep "@angular"
+            exit 1
+          fi

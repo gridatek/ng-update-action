@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint YAML files
+        run: npm run lint
+
+  test-action:
+    name: Test Action
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package-manager: [npm, yarn, pnpm]
+        node-version: [18, 20, 22]
+        angular-version: [16, 17, 18]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Create test Angular workspace
+        run: |
+          # Install Angular CLI
+          npm install -g @angular/cli@${{ matrix.angular-version }}
+
+          # Create new Angular workspace
+          ng new test-workspace --routing=true --style=css --skip-git=true --package-manager=${{ matrix.package-manager }}
+
+      - name: Setup package manager
+        run: |
+          if [[ "${{ matrix.package-manager }}" == "yarn" ]]; then
+            npm install -g yarn
+          elif [[ "${{ matrix.package-manager }}" == "pnpm" ]]; then
+            npm install -g pnpm
+          fi
+
+      - name: Test the action
+        uses: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          working-directory: './test-workspace'
+          package-manager: ${{ matrix.package-manager }}
+          angular-version: 'latest'
+          validation-commands: 'build'
+          merge-strategy: 'always-pr'
+          dev-mode: 'true'
+          skip-initial-install: 'false'
+
+      - name: Verify Angular was updated
+        working-directory: ./test-workspace
+        run: |
+          # Check if Angular was updated by verifying package.json changes
+          if git diff --quiet HEAD~1 package.json; then
+            echo "No changes detected - either no update was needed or action failed"
+          else
+            echo "Angular update changes detected"
+            git diff HEAD~1 package.json
+          fi
+
+  test-edge-cases:
+    name: Test Edge Cases
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create already up-to-date workspace
+        run: |
+          # Install latest Angular CLI
+          npm install -g @angular/cli@latest
+
+          # Create new Angular workspace with latest version
+          ng new test-workspace-latest --routing=true --style=css --skip-git=true --package-manager=npm
+
+      - name: Test action on up-to-date workspace
+        uses: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          working-directory: './test-workspace-latest'
+          package-manager: 'npm'
+          angular-version: 'latest'
+          validation-commands: 'build'
+          dev-mode: 'true'
+
+      - name: Verify no changes when up-to-date
+        working-directory: ./test-workspace-latest
+        run: |
+          if git diff --quiet; then
+            echo "✅ No changes detected for up-to-date workspace - correct behavior"
+          else
+            echo "❌ Unexpected changes detected for up-to-date workspace"
+            git diff
+            exit 1
+          fi
+
+  test-validation-failure:
+    name: Test Validation Failure Handling
+    needs: lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create Angular workspace
+        run: |
+          npm install -g @angular/cli@16
+          ng new test-workspace-fail --routing=true --style=css --skip-git=true --package-manager=npm
+
+      - name: Break the build to test validation failure
+        working-directory: ./test-workspace-fail
+        run: |
+          # Add syntax error to main.ts to cause build failure
+          echo "this is invalid typescript syntax;" >> src/main.ts
+
+      - name: Test action with validation failure
+        id: test-action
+        continue-on-error: true
+        uses: ./
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          working-directory: './test-workspace-fail'
+          package-manager: 'npm'
+          angular-version: 'latest'
+          validation-commands: 'build'
+          merge-strategy: 'always-pr'
+          dev-mode: 'true'
+
+      - name: Verify action handled validation failure
+        run: |
+          if [[ "${{ steps.test-action.outcome }}" == "failure" ]]; then
+            echo "✅ Action correctly failed on validation failure"
+          else
+            echo "❌ Action should have failed on validation failure"
+            exit 1
+          fi

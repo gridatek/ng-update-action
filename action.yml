@@ -1,0 +1,449 @@
+name: 'Angular CLI Update Action'
+description: 'Automatically update Angular CLI workspaces with validation and smart PR creation'
+author: 'GridaTek'
+
+inputs:
+  angular-package:
+    description: 'The Angular package to check for updates'
+    required: false
+    default: '@angular/core'
+
+  angular-version:
+    description: 'Angular version to use (latest, next, rc, or specific version like 17.3.0)'
+    required: false
+    default: 'latest'
+
+  additional-packages:
+    description: 'Additional Angular packages to update (comma-separated)'
+    required: false
+    default: '@angular/cli'
+
+  package-manager:
+    description: 'Package manager to use (npm, yarn, pnpm)'
+    required: false
+    default: 'npm'
+
+  validation-commands:
+    description: 'Commands to run for validation (comma-separated)'
+    required: false
+    default: 'build'
+
+  affected:
+    description: 'Only validate affected projects (true) or all projects (false)'
+    required: false
+    default: 'true'
+
+  merge-strategy:
+    description: 'Merge strategy after validation (auto-merge, always-pr)'
+    required: false
+    default: 'auto-merge'
+
+  pr-labels:
+    description: 'Labels to add to PRs (comma-separated)'
+    required: false
+    default: 'ng-update-action'
+
+  commit-message-prefix:
+    description: 'Prefix for commit messages'
+    required: false
+    default: 'build'
+
+  target-branch:
+    description: 'Target branch for merging changes'
+    required: false
+    default: 'main'
+
+  working-directory:
+    description: 'Working directory'
+    required: false
+    default: '.'
+
+  skip-initial-install:
+    description: 'Skip initial dependency installation'
+    required: false
+    default: 'false'
+
+  dev-mode:
+    description: 'Enable dev mode for testing (creates unique branches with matrix info)'
+    required: false
+    default: 'false'
+
+outputs:
+  updated:
+    description: 'Whether Angular was updated'
+    value: ${{ steps.update-check.outputs.updated }}
+
+  current-version:
+    description: 'Current Angular version before update'
+    value: ${{ steps.version-check.outputs.current-version }}
+
+  latest-version:
+    description: 'Latest Angular version'
+    value: ${{ steps.version-check.outputs.latest-version }}
+
+  validation-result:
+    description: 'Result of validation tests'
+    value: ${{ steps.validation.outputs.result }}
+
+  pr-url:
+    description: 'URL of created PR (if any)'
+    value: ${{ steps.pr-creation.outputs.pr-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Git
+      shell: bash
+      run: |
+        git config --global user.name "ng-update-action[bot]"
+        git config --global user.email "ng-update-action[bot]@users.noreply.github.com"
+
+    - name: Detect Package Manager
+      id: package-manager-detect
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [[ "${{ inputs.package-manager }}" != "npm" && "${{ inputs.package-manager }}" != "yarn" && "${{ inputs.package-manager }}" != "pnpm" ]]; then
+          echo "Detecting package manager..."
+          if [[ -f "yarn.lock" ]]; then
+            echo "package-manager=yarn" >> $GITHUB_OUTPUT
+          elif [[ -f "pnpm-lock.yaml" ]]; then
+            echo "package-manager=pnpm" >> $GITHUB_OUTPUT
+          else
+            echo "package-manager=npm" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "package-manager=${{ inputs.package-manager }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Setup Node.js and Package Manager
+      shell: bash
+      run: |
+        PKG_MANAGER="${{ steps.package-manager-detect.outputs.package-manager }}"
+        echo "Using package manager: $PKG_MANAGER"
+
+        if [[ "$PKG_MANAGER" == "yarn" ]]; then
+          npm install -g yarn
+        elif [[ "$PKG_MANAGER" == "pnpm" ]]; then
+          npm install -g pnpm
+        fi
+
+    - name: Initial Dependencies Installation
+      if: inputs.skip-initial-install == 'false'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        PKG_MANAGER="${{ steps.package-manager-detect.outputs.package-manager }}"
+        echo "Installing dependencies with $PKG_MANAGER..."
+
+        case "$PKG_MANAGER" in
+          "yarn")
+            yarn install --frozen-lockfile
+            ;;
+          "pnpm")
+            pnpm install --frozen-lockfile
+            ;;
+          *)
+            npm ci
+            ;;
+        esac
+
+    - name: Check Angular Versions
+      id: version-check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        PKG_MANAGER="${{ steps.package-manager-detect.outputs.package-manager }}"
+        ANGULAR_PACKAGE="${{ inputs.angular-package }}"
+        ANGULAR_VERSION="${{ inputs.angular-version }}"
+
+        echo "Checking versions for $ANGULAR_PACKAGE..."
+
+        # Get current version
+        case "$PKG_MANAGER" in
+          "yarn")
+            CURRENT_VERSION=$(yarn list --pattern="$ANGULAR_PACKAGE" --depth=0 --json 2>/dev/null | jq -r ".data.trees[0].name" | sed "s/.*@//")
+            ;;
+          "pnpm")
+            CURRENT_VERSION=$(pnpm list "$ANGULAR_PACKAGE" --depth=0 --json 2>/dev/null | jq -r ".[0].dependencies[\"$ANGULAR_PACKAGE\"].version")
+            ;;
+          *)
+            CURRENT_VERSION=$(npm list "$ANGULAR_PACKAGE" --depth=0 --json 2>/dev/null | jq -r ".dependencies[\"$ANGULAR_PACKAGE\"].version")
+            ;;
+        esac
+
+        # Get target version
+        if [[ "$ANGULAR_VERSION" == "latest" || "$ANGULAR_VERSION" == "next" || "$ANGULAR_VERSION" == "rc" ]]; then
+          TARGET_PACKAGE="$ANGULAR_PACKAGE@$ANGULAR_VERSION"
+        else
+          TARGET_PACKAGE="$ANGULAR_PACKAGE@$ANGULAR_VERSION"
+        fi
+
+        case "$PKG_MANAGER" in
+          "yarn")
+            LATEST_VERSION=$(yarn info "$TARGET_PACKAGE" --json 2>/dev/null | jq -r '.data.version')
+            ;;
+          "pnpm")
+            LATEST_VERSION=$(pnpm view "$TARGET_PACKAGE" version 2>/dev/null)
+            ;;
+          *)
+            LATEST_VERSION=$(npm view "$TARGET_PACKAGE" version 2>/dev/null)
+            ;;
+        esac
+
+        echo "current-version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "latest-version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+        echo "target-package=$TARGET_PACKAGE" >> $GITHUB_OUTPUT
+
+        echo "Current version: $CURRENT_VERSION"
+        echo "Latest version: $LATEST_VERSION"
+
+        if [[ "$CURRENT_VERSION" == "$LATEST_VERSION" ]]; then
+          echo "needs-update=false" >> $GITHUB_OUTPUT
+          echo "No update needed - versions are the same"
+        else
+          echo "needs-update=true" >> $GITHUB_OUTPUT
+          echo "Update needed from $CURRENT_VERSION to $LATEST_VERSION"
+        fi
+
+    - name: Create Update Branch
+      if: steps.version-check.outputs.needs-update == 'true'
+      id: branch-creation
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        LATEST_VERSION="${{ steps.version-check.outputs.latest-version }}"
+
+        if [[ "${{ inputs.dev-mode }}" == "true" ]]; then
+          PKG_MANAGER="${{ steps.package-manager-detect.outputs.package-manager }}"
+          NODE_VERSION=$(node --version | sed 's/v//')
+          RUN_ID="${{ github.run_id }}"
+          JOB_ID="${{ github.job }}"
+          BRANCH_NAME="ng-update-${LATEST_VERSION}-${PKG_MANAGER}-node${NODE_VERSION}-${RUN_ID}-${JOB_ID}"
+        else
+          BRANCH_NAME="ng-update-${LATEST_VERSION}"
+        fi
+
+        echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+        echo "Creating branch: $BRANCH_NAME"
+
+        git checkout -b "$BRANCH_NAME"
+
+    - name: Run Angular Update
+      if: steps.version-check.outputs.needs-update == 'true'
+      id: update-check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        TARGET_PACKAGE="${{ steps.version-check.outputs.target-package }}"
+        ADDITIONAL_PACKAGES="${{ inputs.additional-packages }}"
+        PKG_MANAGER="${{ steps.package-manager-detect.outputs.package-manager }}"
+
+        echo "Running ng update for $TARGET_PACKAGE..."
+
+        # Prepare update command
+        UPDATE_PACKAGES="$TARGET_PACKAGE"
+        if [[ -n "$ADDITIONAL_PACKAGES" ]]; then
+          IFS=',' read -ra PACKAGES <<< "$ADDITIONAL_PACKAGES"
+          for package in "${PACKAGES[@]}"; do
+            package=$(echo "$package" | xargs)  # trim whitespace
+            if [[ "$package" == *"@"* ]]; then
+              UPDATE_PACKAGES="$UPDATE_PACKAGES $package"
+            else
+              UPDATE_PACKAGES="$UPDATE_PACKAGES $package@${{ steps.version-check.outputs.latest-version }}"
+            fi
+          done
+        fi
+
+        echo "Updating packages: $UPDATE_PACKAGES"
+
+        # Run ng update with force flag to handle prompts
+        npx ng update $UPDATE_PACKAGES --force --allow-dirty || {
+          echo "ng update failed, trying with individual packages..."
+          for package in $UPDATE_PACKAGES; do
+            echo "Updating $package individually..."
+            npx ng update "$package" --force --allow-dirty || echo "Failed to update $package"
+          done
+        }
+
+        echo "updated=true" >> $GITHUB_OUTPUT
+
+    - name: Install Dependencies After Update
+      if: steps.version-check.outputs.needs-update == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        PKG_MANAGER="${{ steps.package-manager-detect.outputs.package-manager }}"
+        echo "Reinstalling dependencies after update with $PKG_MANAGER..."
+
+        case "$PKG_MANAGER" in
+          "yarn")
+            yarn install
+            ;;
+          "pnpm")
+            pnpm install
+            ;;
+          *)
+            npm install
+            ;;
+        esac
+
+    - name: Commit Changes
+      if: steps.version-check.outputs.needs-update == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        CURRENT_VERSION="${{ steps.version-check.outputs.current-version }}"
+        LATEST_VERSION="${{ steps.version-check.outputs.latest-version }}"
+        COMMIT_PREFIX="${{ inputs.commit-message-prefix }}"
+
+        git add .
+
+        if git diff --cached --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+
+        COMMIT_MESSAGE="${COMMIT_PREFIX}: update Angular from ${CURRENT_VERSION} to ${LATEST_VERSION}"
+        git commit -m "$COMMIT_MESSAGE"
+
+        echo "Changes committed with message: $COMMIT_MESSAGE"
+
+    - name: Run Validation
+      if: steps.version-check.outputs.needs-update == 'true'
+      id: validation
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        VALIDATION_COMMANDS="${{ inputs.validation-commands }}"
+        AFFECTED="${{ inputs.affected }}"
+
+        echo "Running validation commands: $VALIDATION_COMMANDS"
+
+        VALIDATION_FAILED=false
+
+        IFS=',' read -ra COMMANDS <<< "$VALIDATION_COMMANDS"
+        for cmd in "${COMMANDS[@]}"; do
+          cmd=$(echo "$cmd" | xargs)  # trim whitespace
+          echo "Running validation: $cmd"
+
+          case "$cmd" in
+            "build")
+              if [[ "$AFFECTED" == "true" ]]; then
+                npx ng build --configuration production || VALIDATION_FAILED=true
+              else
+                npx ng build --configuration production || VALIDATION_FAILED=true
+              fi
+              ;;
+            "test")
+              npx ng test --watch=false --browsers=ChromeHeadless --code-coverage || VALIDATION_FAILED=true
+              ;;
+            "lint")
+              npx ng lint || VALIDATION_FAILED=true
+              ;;
+            "e2e")
+              npx ng e2e || VALIDATION_FAILED=true
+              ;;
+            *)
+              echo "Running custom command: $cmd"
+              eval "$cmd" || VALIDATION_FAILED=true
+              ;;
+          esac
+        done
+
+        if [[ "$VALIDATION_FAILED" == "true" ]]; then
+          echo "result=failed" >> $GITHUB_OUTPUT
+          echo "Validation failed"
+          exit 1
+        else
+          echo "result=passed" >> $GITHUB_OUTPUT
+          echo "Validation passed"
+        fi
+
+    - name: Push Branch
+      if: steps.version-check.outputs.needs-update == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        BRANCH_NAME="${{ steps.branch-creation.outputs.branch-name }}"
+        echo "Pushing branch: $BRANCH_NAME"
+        git push origin "$BRANCH_NAME"
+
+    - name: Create or Merge PR
+      if: steps.version-check.outputs.needs-update == 'true'
+      id: pr-creation
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        BRANCH_NAME="${{ steps.branch-creation.outputs.branch-name }}"
+        TARGET_BRANCH="${{ inputs.target-branch }}"
+        MERGE_STRATEGY="${{ inputs.merge-strategy }}"
+        VALIDATION_RESULT="${{ steps.validation.outputs.result }}"
+        PR_LABELS="${{ inputs.pr-labels }}"
+        CURRENT_VERSION="${{ steps.version-check.outputs.current-version }}"
+        LATEST_VERSION="${{ steps.version-check.outputs.latest-version }}"
+
+        # Create PR title and body
+        PR_TITLE="Update Angular from ${CURRENT_VERSION} to ${LATEST_VERSION}"
+        PR_BODY="## Angular Update Summary
+
+        - **From:** ${CURRENT_VERSION}
+        - **To:** ${LATEST_VERSION}
+        - **Package Manager:** ${{ steps.package-manager-detect.outputs.package-manager }}
+        - **Validation:** ${VALIDATION_RESULT}
+
+        ### Updated Packages
+        - ${{ inputs.angular-package }}
+        - ${{ inputs.additional-packages }}
+
+        ### Validation Results
+        Commands run: \`${{ inputs.validation-commands }}\`
+        Result: **${VALIDATION_RESULT}**
+
+        ---
+        *This PR was created automatically by [ng-update-action](https://github.com/gridatek/ng-update-action)*"
+
+        # Check if we should auto-merge or create PR
+        if [[ "$MERGE_STRATEGY" == "auto-merge" && "$VALIDATION_RESULT" == "passed" ]]; then
+          echo "Auto-merging successful update..."
+
+          # Try to merge directly if branch protection allows
+          git checkout "$TARGET_BRANCH"
+          git pull origin "$TARGET_BRANCH"
+
+          if git merge "$BRANCH_NAME" --no-ff -m "$PR_TITLE"; then
+            git push origin "$TARGET_BRANCH"
+            git push origin --delete "$BRANCH_NAME"
+            echo "pr-url=auto-merged" >> $GITHUB_OUTPUT
+            echo "Successfully auto-merged update"
+          else
+            echo "Auto-merge failed, creating PR instead..."
+            git checkout "$BRANCH_NAME"
+
+            # Create PR using GitHub CLI
+            if command -v gh &> /dev/null; then
+              PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS")
+              echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+              echo "Created PR: $PR_URL"
+            else
+              echo "GitHub CLI not available, cannot create PR"
+              echo "pr-url=unavailable" >> $GITHUB_OUTPUT
+            fi
+          fi
+        else
+          echo "Creating PR for review..."
+
+          # Create PR using GitHub CLI
+          if command -v gh &> /dev/null; then
+            PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS")
+            echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+            echo "Created PR: $PR_URL"
+          else
+            echo "GitHub CLI not available, cannot create PR"
+            echo "pr-url=unavailable" >> $GITHUB_OUTPUT
+          fi
+        fi
+
+branding:
+  icon: 'arrow-up-circle'
+  color: 'red'

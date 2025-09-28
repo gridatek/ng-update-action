@@ -1,0 +1,31 @@
+{
+  "name": "ng-update-action",
+  "version": "1.0.0",
+  "description": "GitHub Action to automatically update Angular CLI workspaces with validation and smart PR creation",
+  "main": "action.yml",
+  "scripts": {
+    "lint": "yamllint .",
+    "test": "echo \"Tests are implemented as GitHub Actions workflows\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gridatek/ng-update-action.git"
+  },
+  "keywords": [
+    "angular",
+    "angular-cli",
+    "github-action",
+    "automation",
+    "updates",
+    "dependency-management"
+  ],
+  "author": "GridaTek",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/gridatek/ng-update-action/issues"
+  },
+  "homepage": "https://github.com/gridatek/ng-update-action#readme",
+  "devDependencies": {
+    "yamllint": "^1.0.0"
+  }
+}
