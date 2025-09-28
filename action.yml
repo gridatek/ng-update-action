@@ -422,9 +422,17 @@ runs:
 
             # Create PR using GitHub CLI
             if command -v gh &> /dev/null; then
-              PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS")
-              echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
-              echo "Created PR: $PR_URL"
+              # Try to create PR with labels, fall back without labels if they don't exist
+              if PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS" 2>/dev/null); then
+                echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+                echo "Created PR with labels: $PR_URL"
+              elif PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" 2>/dev/null); then
+                echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+                echo "Created PR without labels (labels not found): $PR_URL"
+              else
+                echo "Failed to create PR"
+                echo "pr-url=failed" >> $GITHUB_OUTPUT
+              fi
             else
               echo "GitHub CLI not available, cannot create PR"
               echo "pr-url=unavailable" >> $GITHUB_OUTPUT
@@ -435,9 +443,17 @@ runs:
 
           # Create PR using GitHub CLI
           if command -v gh &> /dev/null; then
-            PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS")
-            echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
-            echo "Created PR: $PR_URL"
+            # Try to create PR with labels, fall back without labels if they don't exist
+            if PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" --label "$PR_LABELS" 2>/dev/null); then
+              echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+              echo "Created PR with labels: $PR_URL"
+            elif PR_URL=$(gh pr create --title "$PR_TITLE" --body "$PR_BODY" --base "$TARGET_BRANCH" --head "$BRANCH_NAME" 2>/dev/null); then
+              echo "pr-url=$PR_URL" >> $GITHUB_OUTPUT
+              echo "Created PR without labels (labels not found): $PR_URL"
+            else
+              echo "Failed to create PR"
+              echo "pr-url=failed" >> $GITHUB_OUTPUT
+            fi
           else
             echo "GitHub CLI not available, cannot create PR"
             echo "pr-url=unavailable" >> $GITHUB_OUTPUT

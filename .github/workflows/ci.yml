@@ -47,14 +47,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Create test Angular workspace
-        run: |
-          # Install Angular CLI
-          npm install -g @angular/cli@${{ matrix.angular-version }}
-
-          # Create new Angular workspace
-          ng new test-workspace --routing=true --style=css --skip-git=true --package-manager=${{ matrix.package-manager }}
-
       - name: Setup package manager
         run: |
           if [[ "${{ matrix.package-manager }}" == "yarn" ]]; then
@@ -62,6 +54,14 @@ jobs:
           elif [[ "${{ matrix.package-manager }}" == "pnpm" ]]; then
             npm install -g pnpm
           fi
+
+      - name: Create test Angular workspace
+        run: |
+          # Install Angular CLI
+          npm install -g @angular/cli@${{ matrix.angular-version }}
+
+          # Create new Angular workspace
+          ng new test-workspace --routing=true --style=css --skip-git=true --package-manager=${{ matrix.package-manager }}
 
       - name: Test the action
         uses: ./
